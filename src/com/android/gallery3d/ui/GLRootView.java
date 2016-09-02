@@ -103,9 +103,6 @@ public class GLRootView extends GLSurfaceView
     private final IdleRunner mIdleRunner = new IdleRunner();
 
     private final ReentrantLock mRenderLock = new ReentrantLock();
-    private final Condition mFreezeCondition =
-            mRenderLock.newCondition();
-    private boolean mFreeze;
 
     private long mLastDrawFinishTime;
     private boolean mInDownState = false;
@@ -347,10 +344,6 @@ public class GLRootView extends GLSurfaceView
         }
         mRenderLock.lock();
 
-        while (mFreeze) {
-            mFreezeCondition.awaitUninterruptibly();
-        }
-
         try {
             onDrawFrameLocked(gl);
         } finally {
@@ -531,7 +524,6 @@ public class GLRootView extends GLSurfaceView
 
     @Override
     public void onPause() {
-        unfreeze();
         super.onPause();
         if (DEBUG_PROFILE) {
             Log.d(TAG, "Stop profiling");
@@ -561,20 +553,6 @@ public class GLRootView extends GLSurfaceView
         return mCompensationMatrix;
     }
 
-    @Override
-    public void freeze() {
-        mRenderLock.lock();
-        mFreeze = true;
-        mRenderLock.unlock();
-    }
-
-    @Override
-    public void unfreeze() {
-        mRenderLock.lock();
-        mFreeze = false;
-        mFreezeCondition.signalAll();
-        mRenderLock.unlock();
-    }
 
     @Override
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
@@ -591,40 +569,4 @@ public class GLRootView extends GLSurfaceView
         setSystemUiVisibility(flags);
     }
 
-    // We need to unfreeze in the following methods and in onPause().
-    // These methods will wait on GLThread. If we have freezed the GLRootView,
-    // the GLThread will wait on main thread to call unfreeze and cause dead
-    // lock.
-    @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
-        unfreeze();
-        super.surfaceChanged(holder, format, w, h);
-    }
-
-    @Override
-    public void surfaceCreated(SurfaceHolder holder) {
-        unfreeze();
-        super.surfaceCreated(holder);
-    }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        unfreeze();
-        super.surfaceDestroyed(holder);
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        unfreeze();
-        super.onDetachedFromWindow();
-    }
-
-    @Override
-    protected void finalize() throws Throwable {
-        try {
-            unfreeze();
-        } finally {
-            super.finalize();
-        }
-    }
 }
